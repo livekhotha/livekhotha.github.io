@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Support</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .chat-scroll::-webkit-scrollbar { width: 5px; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .chat-bg { background-color: #efeae2; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
+        .mic-active { color: #ef4444 !important; transform: scale(1.2); transition: 0.2s; }
+        
+        /* Language Welcome Box Styling */
+        .welcome-bot-msg { background-color: #ffffff; border-left: 4px solid #008069; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="h-screen flex flex-col font-sans">
+
+    <!-- Header -->
+    <header class="bg-[#008069] text-white p-4 shadow-md flex justify-between items-center z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-white text-[#008069] rounded-full flex items-center justify-center font-bold text-xl shadow-inner relative">
+                <i class="fa-solid fa-headset"></i>
+                <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
+            </div>
+            <div>
+                <h1 id="headerTitle" class="text-lg font-bold tracking-wide leading-tight">Live Support</h1>
+                <p id="typingIndicator" class="text-xs text-green-100 hidden">Admin is typing...</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Chat Area -->
+    <main id="chatBox" class="flex-1 overflow-y-auto p-4 chat-scroll chat-bg flex flex-col gap-3 relative">
+        <div class="text-center text-gray-500 text-xs my-2 bg-yellow-100/90 rounded-lg p-2 mx-auto shadow-sm max-w-xs border border-yellow-200">
+            <i class="fa-solid fa-lock mr-1"></i> End-to-end secure chat.
+        </div>
+        
+        <!-- Welcome Language Message (Appears as a chat message) -->
+        <div id="welcomeLangBox" class="welcome-bot-msg max-w-[85%] p-3 rounded-lg text-sm self-start mb-2 hidden">
+            <div class="text-gray-800 font-semibold mb-2" id="welcomeLangText">
+                অনুগ্রহ করে আপনার ভাষা নির্বাচন করুন:<br><br>
+                ১. বাংলার জন্য '1' চাপুন<br>
+                2. For English press '2'<br>
+                3. हिंदी के लिए '3' दबाएं
+            </div>
+            <div class="text-[10px] text-gray-500 text-right mt-1"><i class="fa-solid fa-robot mr-1"></i>Automated System</div>
+        </div>
+    </main>
+
+    <!-- Recording Overlay -->
+    <div id="recordingOverlay" class="hidden absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-5 py-2 rounded-full font-bold shadow-2xl animate-pulse z-20 flex items-center gap-2">
+        <i class="fa-solid fa-microphone-lines"></i> <span id="recTimer">Recording... 00:00</span>
+    </div>
+
+    <!-- Preview Container -->
+    <div id="previewContainer" class="hidden px-4 py-3 bg-white border-t flex flex-col items-center shadow-lg relative z-20">
+        <button type="button" id="cancelPreviewBtn" class="absolute top-2 right-4 text-gray-500 hover:text-red-500 bg-gray-200 rounded-full w-6 h-6 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+        <div id="previewContent" class="w-full flex justify-center mb-2"></div>
+        <p id="previewText" class="text-sm text-gray-600 font-semibold mb-2 truncate max-w-[250px]"></p>
+        <button type="button" id="previewSendBtn" class="bg-[#008069] text-white px-6 py-2 rounded-full hover:bg-[#016d5a] font-bold shadow-md w-full max-w-xs"><i class="fa-solid fa-paper-plane mr-2"></i>Send</button>
+    </div>
+
+    <!-- Input Bar -->
+    <footer class="bg-[#f0f2f5] p-3 flex items-center gap-2 relative z-30">
+        <input type="file" id="fileInput" class="hidden" accept="image/*,application/pdf">
+        <button type="button" id="attachBtn" class="text-gray-500 hover:text-[#008069] p-2 transition text-xl"><i class="fa-solid fa-paperclip"></i></button>
+        
+        <input type="text" id="msgInput" placeholder="Message..." class="flex-1 bg-white p-3 rounded-full focus:outline-none shadow-sm transition-all border border-gray-300">
+        
+        <button type="button" id="voiceBtn" class="text-gray-500 hover:text-red-500 p-2 transition cursor-pointer text-xl select-none" title="Hold to record voice">
+            <i class="fa-solid fa-microphone"></i>
+        </button>
+        
+        <button type="button" id="sendBtn" class="bg-[#008069] text-white w-11 h-11 rounded-full hover:bg-[#016d5a] flex items-center justify-center shadow-md transition transform hover:scale-105">
+            <i class="fa-solid fa-paper-plane"></i>
+        </button>
+    </footer>
+
+    <script type="module">
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+        import { getDatabase, ref, get, onValue, onChildAdded, onChildChanged, onChildRemoved, push, set, update, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA2wB9ueukdQSRt-dKXuA5JECHRB8KySQs",
+            authDomain: "call-bd932.firebaseapp.com",
+            databaseURL: "https://call-bd932-default-rtdb.firebaseio.com",
+            projectId: "call-bd932",
+            storageBucket: "call-bd932.firebasestorage.app"
+        };
+
+        let db;
+        let deviceUid = localStorage.getItem('user_device_uid');
+        if (!deviceUid) {
+            deviceUid = 'USER_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+            localStorage.setItem('user_device_uid', deviceUid);
+        }
+
+        let appSettings = { 
+            away_mode: false, 
+            away_msg: "",
+            welcome_lang_text: "অনুগ্রহ করে আপনার ভাষা নির্বাচন করুন:<br><br>১. বাংলার জন্য '1' চাপুন<br>2. For English press '2'<br>3. हिंदी के लिए '3' दबाएं"
+        };
+        let awayMsgSentSession = false; 
+        let hasSentAnyMessage = false;
+
+        function initApp() {
+            try {
+                const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+                db = getDatabase(app);
+                
+                setupPresence();
+                fetchSettings();
+                setupRealtimeChatListeners();
+            } catch (e) { console.error(e); }
+        }
+
+        function setupPresence() {
+            const userStatusRef = ref(db, `chats/${deviceUid}/user_info`);
+            onValue(ref(db, '.info/connected'), (snap) => {
+                if (snap.val() === true) {
+                    update(userStatusRef, { status: 'online', device_model: navigator.userAgent.substring(0, 40), last_active: serverTimestamp() });
+                    onDisconnect(userStatusRef).update({ status: 'offline', last_active: serverTimestamp() });
+                }
+            });
+        }
+
+        function fetchSettings() {
+            onValue(ref(db, 'settings'), (snap) => {
+                if(snap.exists()) {
+                    const data = snap.val();
+                    document.getElementById('headerTitle').innerText = data.company_name || "Live Support";
+                    appSettings.away_mode = data.away_mode || false;
+                    appSettings.away_msg = data.away_msg || "আমাদের স্যার এখন বিজি আছেন। আপনার যদি কিছু বলার থাকে, তবে এখানে মেসেজ বা ভয়েস দিয়ে রাখুন। স্যার রাত ৮টা থেকে ৯টার মধ্যে আপনার সাথে যোগাযোগ করবেন।";
+                    
+                    // Future proofing: If admin panel sets a custom welcome text, use it.
+                    if(data.welcome_lang_text) {
+                        appSettings.welcome_lang_text = data.welcome_lang_text;
+                        document.getElementById('welcomeLangText').innerHTML = appSettings.welcome_lang_text;
+                    }
+                }
+            });
+
+            // Typing Indicator from Admin
+            onValue(ref(db, `chats/${deviceUid}/typing/admin`), (snap) => {
+                const el = document.getElementById('typingIndicator');
+                if(snap.val()) el.classList.remove('hidden');
+                else el.classList.add('hidden');
+            });
+        }
+
+        // True Background Sync (No F5 Needed)
+        function setupRealtimeChatListeners() {
+            const msgsRef = ref(db, `chats/${deviceUid}/messages`);
+            const chatBox = document.getElementById('chatBox');
+            
+            // Initial check to show/hide welcome language message
+            get(msgsRef).then((snapshot) => {
+                if(!snapshot.exists()) {
+                    document.getElementById('welcomeLangBox').classList.remove('hidden');
+                } else {
+                    hasSentAnyMessage = true;
+                }
+            });
+
+            // Listen for NEW messages
+            onChildAdded(msgsRef, (snapshot) => {
+                const key = snapshot.key;
+                const msg = snapshot.val();
+                
+                hasSentAnyMessage = true;
+                document.getElementById('welcomeLangBox').classList.add('hidden'); // Hide welcome msg once chat starts
+
+                if(!document.getElementById(`msg-${key}`)) {
+                    appendMessageUI(key, msg);
+                    
+                    // Mark Admin message as read
+                    if(msg.sender === 'admin' && msg.status !== 'read') {
+                        update(ref(db, `chats/${deviceUid}/messages/${key}`), { status: 'read' });
+                    }
+
+                    // TTS for Away Message (Plays only once)
+                    if(msg.is_away_msg && msg.sender === 'admin' && !msg.read_by_user) {
+                        playVoiceTTS(msg.content);
+                        update(ref(db, `chats/${deviceUid}/messages/${key}`), { read_by_user: true });
+                    }
+                }
+            });
+
+            // Listen for EDITED/STATUS changed messages
+            onChildChanged(msgsRef, (snapshot) => {
+                const key = snapshot.key;
+                const msg = snapshot.val();
+                const msgDiv = document.getElementById(`msg-${key}`);
+                
+                if(msgDiv) {
+                    const contentDiv = msgDiv.querySelector('.msg-content-wrapper');
+                    if(contentDiv) contentDiv.innerHTML = generateContentHtml(msg);
+                    
+                    const tickContainer = msgDiv.querySelector('.tick-container');
+                    if(tickContainer) tickContainer.innerHTML = generateTick(msg.sender, msg.status);
+                }
+            });
+
+            // Listen for DELETED messages (from Admin)
+            onChildRemoved(msgsRef, (snapshot) => {
+                const key = snapshot.key;
+                const msgDiv = document.getElementById(`msg-${key}`);
+                if(msgDiv) msgDiv.remove();
+            });
+        }
+
+        function playVoiceTTS(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'bn-BD'; 
+                utterance.rate = 0.9;
+                utterance.pitch = 1;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function formatTime(ts) {
+            if(!ts) return "";
+            return new Date(ts).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function generateTick(sender, status) {
+            if(sender !== 'user') return '';
+            return status === 'read' 
+                ? `<i class="fa-solid fa-check-double text-blue-500 text-[11px] ml-1"></i>` 
+                : `<i class="fa-solid fa-check text-gray-400 text-[11px] ml-1"></i>`;
+        }
+
+        function generateContentHtml(msg) {
+            let html = '';
+            let editTag = msg.is_edited ? `<span class="text-[9px] text-gray-400 ml-2 italic">(edited)</span>` : '';
+            
+            if (msg.type === 'text') {
+                html = `<span class="leading-relaxed whitespace-pre-wrap">${msg.content}</span> ${editTag}`;
+            }
+            if (msg.type === 'image') {
+                html = `<img src="${msg.media_url}" class="max-w-[200px] rounded mb-1 border" /><a href="${msg.media_url}" download="Image.png" class="bg-gray-100 text-gray-700 px-3 py-1 rounded text-xs font-bold block text-center shadow-sm"><i class="fa-solid fa-download mr-1"></i> Download</a>`;
+            }
+            if (msg.type === 'pdf') {
+                html = `<div class="flex flex-col items-start"><span class="text-red-500 mb-1 font-bold"><i class="fa-solid fa-file-pdf mr-1"></i> PDF File</span><a href="${msg.media_url}" download="Document.pdf" class="bg-gray-100 text-gray-700 px-3 py-1 rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-download mr-1"></i> Download</a></div>`;
+            }
+            if (msg.type === 'audio') {
+                let pitchCode = '';
+                if(msg.effect === 'office') pitchCode = `onloadeddata="this.playbackRate=1.1; this.preservesPitch=true;"`;
+                else if(msg.effect === 'female') pitchCode = `onloadeddata="this.playbackRate=1.4; this.preservesPitch=false;"`;
+                else if(msg.effect === 'deep') pitchCode = `onloadeddata="this.playbackRate=0.75; this.preservesPitch=false;"`;
+                else if(msg.effect === 'anonymous') pitchCode = `onloadeddata="this.playbackRate=0.6; this.preservesPitch=false;"`;
+                
+                html = `<audio src="${msg.media_url}" controls controlsList="nodownload" ${pitchCode} class="h-10 w-48 outline-none"></audio>`;
+            }
+            return html;
+        }
+
+        function appendMessageUI(key, msg) {
+            const chatBox = document.getElementById('chatBox');
+            if(document.getElementById(`msg-${key}`)) return;
+
+            const isUser = msg.sender === 'user';
+            const align = isUser ? 'self-end bg-[#d9fdd3]' : 'self-start bg-white border border-gray-200';
+            const radius = isUser ? 'rounded-tl-lg rounded-bl-lg rounded-tr-sm rounded-br-lg' : 'rounded-tr-lg rounded-br-lg rounded-tl-sm rounded-bl-lg';
+            
+            const div = document.createElement('div');
+            div.id = `msg-${key}`;
+            div.className = `max-w-[85%] p-2.5 shadow-sm text-sm ${align} ${radius} relative flex flex-col mb-3`;
+            div.innerHTML = `
+                <div class="pr-14 text-gray-800 pb-3 msg-content-wrapper">${generateContentHtml(msg)}</div>
+                <div class="text-[10px] text-gray-500 absolute bottom-1 right-2 flex items-center bg-white/50 px-1.5 py-0.5 rounded-full">
+                    ${formatTime(msg.timestamp)} <span class="tick-container">${generateTick(msg.sender, msg.status)}</span>
+                </div>
+            `;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage(text, type = 'text', mediaUrl = null) {
+            if (!text && !mediaUrl) return;
+            try {
+                // Ensure device model is updated before sending first message
+                if(!hasSentAnyMessage) {
+                    await update(ref(db, `chats/${deviceUid}/user_info`), { status: 'online', device_model: navigator.userAgent.substring(0, 40) });
+                }
+
+                const newRef = push(ref(db, `chats/${deviceUid}/messages`));
+                await set(newRef, { sender: 'user', type, content: text, media_url: mediaUrl, timestamp: serverTimestamp(), status: 'sent' });
+                document.getElementById('msgInput').value = "";
+                
+                // Hide Welcome Text
+                document.getElementById('welcomeLangBox').classList.add('hidden');
+                
+                // Trigger Away Message if Admin is busy
+                if (appSettings.away_mode && !awayMsgSentSession) {
+                    awayMsgSentSession = true; 
+                    setTimeout(() => {
+                        push(ref(db, `chats/${deviceUid}/messages`), { 
+                            sender: 'admin', type: 'text', content: appSettings.away_msg, is_away_msg: true, timestamp: serverTimestamp(), status: 'sent' 
+                        });
+                    }, 1200);
+                }
+            } catch(err) { alert("Sending failed. Check network connection."); }
+        }
+
+        // Typing logic User
+        let typingTimer;
+        document.getElementById('msgInput').addEventListener('input', () => {
+            update(ref(db, `chats/${deviceUid}/typing`), { user: true });
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => update(ref(db, `chats/${deviceUid}/typing`), { user: false }), 2000);
+        });
+
+        document.getElementById('sendBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            const text = document.getElementById('msgInput').value.trim();
+            if (text) sendMessage(text);
+        });
+
+        document.getElementById('msgInput').addEventListener('keydown', (e) => { 
+            if (e.key === 'Enter') { e.preventDefault(); const text = e.target.value.trim(); if (text) sendMessage(text); }
+        });
+
+        // Hold to record voice (Mobile Browser Warning handled)
+        let mediaRecorder, audioChunks = [], recTimer, recSeconds = 0;
+        const voiceBtn = document.getElementById('voiceBtn');
+        const overlay = document.getElementById('recordingOverlay');
+
+        const startRecording = async (e) => {
+            if(e) e.preventDefault();
+            audioChunks = [];
+            
+            // HTTPS/Localhost Check for mobile browsers
+            if (window.location.protocol === 'file:' || window.location.protocol === 'content:') {
+                alert("Microphone is blocked by your mobile browser because this file is opened locally (file://). Please host this HTML file on a secure server (https://) for voice recording to work.");
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    if(audioChunks.length > 0 && recSeconds > 0) {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.onload = async (event) => {
+                            overlay.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Sending...`;
+                            await sendMessage("Voice message", 'audio', event.target.result);
+                            overlay.classList.add('hidden');
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    } else { overlay.classList.add('hidden'); }
+                };
+                mediaRecorder.start();
+                recSeconds = 0;
+                voiceBtn.classList.add('mic-active');
+                overlay.classList.remove('hidden');
+                overlay.innerHTML = `<i class="fa-solid fa-microphone-lines"></i> <span id="recTimer">Recording... 00:00</span>`;
+                recTimer = setInterval(() => {
+                    recSeconds++;
+                    let m = Math.floor(recSeconds / 60).toString().padStart(2, '0');
+                    let s = (recSeconds % 60).toString().padStart(2, '0');
+                    document.getElementById('recTimer').innerText = `Recording... ${m}:${s}`;
+                }, 1000);
+            } catch (err) { 
+                alert("Microphone access denied or not supported on this browser."); 
+            }
+        };
+
+        const stopAndSendRecording = (e) => {
+            if(e) e.preventDefault();
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') { 
+                mediaRecorder.stop(); 
+                mediaRecorder.stream.getTracks().forEach(t => t.stop()); 
+            }
+            clearInterval(recTimer);
+            voiceBtn.classList.remove('mic-active');
+        };
+
+        voiceBtn.addEventListener('mousedown', startRecording); 
+        voiceBtn.addEventListener('mouseup', stopAndSendRecording); 
+        voiceBtn.addEventListener('mouseleave', stopAndSendRecording);
+        
+        // Mobile touch events for voice
+        voiceBtn.addEventListener('touchstart', startRecording, {passive: false}); 
+        voiceBtn.addEventListener('touchend', stopAndSendRecording, {passive: false});
+        voiceBtn.addEventListener('touchcancel', stopAndSendRecording, {passive: false});
+
+        // Mobile Friendly File Input (Base64 Memory Fix)
+        const previewContainer = document.getElementById('previewContainer');
+        const previewContent = document.getElementById('previewContent');
+        const previewText = document.getElementById('previewText');
+        
+        function showPreview(file, type, blobUrl) {
+            window.pendingMedia = { file, type, url: blobUrl };
+            previewContainer.classList.remove('hidden');
+            document.getElementById('previewSendBtn').disabled = false;
+            document.getElementById('previewSendBtn').innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i>Send`;
+            
+            if(type === 'image') {
+                previewContent.innerHTML = `<img src="${blobUrl}" class="max-h-32 rounded-lg shadow-md border" />`;
+                previewText.innerText = "Image attached";
+            } else if(type === 'pdf') {
+                previewContent.innerHTML = `<div class="text-4xl text-red-500"><i class="fa-solid fa-file-pdf"></i></div>`;
+                previewText.innerText = file.name || "PDF Document";
+            }
+        }
+
+        document.getElementById('cancelPreviewBtn').addEventListener('click', () => { 
+            window.pendingMedia = null; 
+            previewContainer.classList.add('hidden'); 
+            document.getElementById('fileInput').value = ""; 
+        });
+
+        document.getElementById('previewSendBtn').addEventListener('click', () => {
+            if(!window.pendingMedia) return;
+            const { file, type } = window.pendingMedia;
+            const btn = document.getElementById('previewSendBtn');
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Uploading...`;
+            btn.disabled = true;
+
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                await sendMessage(type === 'image' ? "Image Uploaded" : "PDF Document Uploaded", type, event.target.result);
+                window.pendingMedia = null;
+                previewContainer.classList.add('hidden');
+                document.getElementById('fileInput').value = "";
+            };
+            // Error handling for large files on mobile
+            reader.onerror = function() {
+                alert("File is too large or couldn't be processed on this device.");
+                btn.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i>Send`;
+                btn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('attachBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Limit file size to 4MB for Base64 stability on mobile
+            if (file.size > 4 * 1024 * 1024) {
+                alert("File is too large. Please select a file under 4MB.");
+                document.getElementById('fileInput').value = "";
+                return;
+            }
+
+            const type = file.type.startsWith('image/') ? 'image' : 'pdf';
+            showPreview(file, type, URL.createObjectURL(file));
+        });
+
+        initApp();
+    </script>
+</body>
+</html>
